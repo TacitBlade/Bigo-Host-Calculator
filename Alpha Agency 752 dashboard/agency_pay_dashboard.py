@@ -191,102 +191,51 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-import streamlit as st
-import pandas as pd
-from pathlib import Path
+st.markdown("---")
+st.header("🏆 Diamond Optimizer — Maximize PK Event Rewards")
 
-# === Load Dataset ===
+# === User Input ===
+total_diamonds = st.number_input("Enter your total diamonds:", min_value=0, step=100)
+
+# === Load Rules & Rewards Sheet ===
 try:
-    df = pd.read_excel("RulesAndRewards.xlsx", sheet_name="RulesAndRewards")
+    pk_df = pd.read_excel("July 2025 UK Agency&Host Events .xlsx", sheet_name="rules and rewards")
 except Exception as e:
-    st.error(f"Failed to load data file: {e}")
+    st.error(f"Could not load 'rules and rewards' sheet: {e}")
     st.stop()
 
-def compute_allocation(diamonds: int, pk_df: pd.DataFrame):
-    """
-    Allocate diamonds across sorted PK events,
-    returning a DataFrame breakdown, total rebate, and leftover.
-    """
-    records, remaining, total_rebate = [], diamonds, 0
+# === Prepare Win Data ===
+win_columns = [col for col in pk_df.columns if "Win" in col]
+pk_df['Max Win'] = pk_df[win_columns].max(axis=1)
 
-    for _, row in pk_df.iterrows():
-        cost, rebate = int(row['Cost']), int(row['Rebate'])
-        if remaining < cost:
-            records.append({
-                'PK Type': row['PK Type'],
-                'Cost': cost,
-                'Rebate': rebate,
-                'Count': 0,
-                'Spent': 0,
-                'Earned': 0,
-                'Leftover': remaining
-            })
-            continue
+reward_table = pk_df[['PK Type', 'Max Win']].copy()
+reward_table = reward_table.dropna(subset=['Max Win'])
+reward_table = reward_table.sort_values(by='Max Win', ascending=False).reset_index(drop=True)
 
-        count = remaining // cost
-        spent = count * cost
-        earned = count * rebate
-        remaining -= spent
-        total_rebate += earned
+# === Allocate Diamonds ===
+remaining_diamonds = total_diamonds
+allocations = []
 
-        records.append({
-            'PK Type': row['PK Type'],
-            'Cost': cost,
-            'Rebate': rebate,
-            'Count': count,
-            'Spent': spent,
-            'Earned': earned,
-            'Leftover': remaining
-        })
+for _, row in reward_table.iterrows():
+    if remaining_diamonds == 0:
+        break
 
-    df = pd.DataFrame(records)
-    return df, total_rebate, remaining
+    allocated = remaining_diamonds
+    allocations.append({
+        "PK Type": row['PK Type'],
+        "Diamonds Allocated": allocated,
+        "Estimated Reward": row['Max Win']
+    })
 
-def main():
-    st.title("💎 Diamond-to-PK Reward Planner (Local File)")
+    remaining_diamonds = 0  # spent entirely on the highest reward
 
-    st.markdown("""
-    - Place your Excel file (sheet named `RulesAndRewards`)  
-      in this app’s directory or specify its path.  
-    - Enter the path and your diamond balance.  
-    - Click **Calculate** to see your reward breakdown.
-    """)
-
-    file_path = st.text_input(
-        "Enter Excel file path:", 
-        value="RulesAndRewards.xlsx",
-        help="e.g., ./data/RulesAndRewards.xlsx"
-    )
-
-    diamonds = st.number_input(
-        "Your diamond balance:", 
-        min_value=0, 
-        step=1, 
-        value=0
-    )
-
-    if st.button("Calculate"):
-        pk_df = pd.read_excel("RulesAndRewards.xlsx", sheet_name="Sheet1")
-
-        if pk_df.empty:
-            st.warning("No PK data to process.")
-            return
-
-        allocation_df, total_rebate, leftover = compute_allocation(diamonds, pk_df)
-
-        st.subheader("📊 Allocation Breakdown")
-        st.dataframe(allocation_df)
-
-        st.markdown(f"""
-        **Total Diamonds Spent:** {diamonds - leftover}  
-        **Total Rebate Earned:** {total_rebate}  
-        **Diamonds Remaining:** {leftover}
-        """)
-
-if __name__ == "__main__":
-    main()
-
- 
+# === Results Display ===
+st.subheader("💎 Reward Allocation Summary")
+if allocations:
+    st.table(pd.DataFrame(allocations))
+    st.success(f"Total diamonds allocated: {total_diamonds}")
+else:
+    st.info("Enter diamonds above to view your optimal reward allocation.")
         # === Footer ===
 st.markdown("""
 <hr style="margin-top: 50px;">
