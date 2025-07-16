@@ -102,76 +102,66 @@ st.markdown("""
 
 import streamlit as st
 
-def compute_optimal_conversion(diamonds, packages):
+def greedy_bean_to_diamond(beans, packages):
     """
-    Dynamic programming to maximize beans for given diamonds.
-    Returns total beans, counts per package, and leftover diamonds.
+    Greedy conversion: use the highest-tier bean packages first.
+    Returns total diamonds, package counts, and leftover beans.
     """
-    # dp[d] = max beans using up to d diamonds
-    dp = [0] * (diamonds + 1)
-    # last_choice[d] = index of package used last to achieve dp[d]
-    last_choice = [-1] * (diamonds + 1)
-
-    for i, (cost, beans) in enumerate(packages):
-        for d in range(cost, diamonds + 1):
-            candidate = dp[d - cost] + beans
-            if candidate > dp[d]:
-                dp[d] = candidate
-                last_choice[d] = i
-
-    # Reconstruct package counts
     counts = [0] * len(packages)
-    d = diamonds
-    while d > 0 and last_choice[d] != -1:
-        pkg_idx = last_choice[d]
-        counts[pkg_idx] += 1
-        d -= packages[pkg_idx][0]
+    total_diamonds = 0
+    remaining_beans = beans
 
-    leftover = d
-    total_beans = dp[diamonds]
-    return total_beans, counts, leftover
+    for i, (bean_cost, dia_return) in enumerate(packages):
+        if remaining_beans >= bean_cost:
+            cnt = remaining_beans // bean_cost
+            counts[i] = cnt
+            total_diamonds += cnt * dia_return
+            remaining_beans -= cnt * bean_cost
+
+    return total_diamonds, counts, remaining_beans
 
 def main():
-    st.title("Bean Conversion Optimizer")
+    st.title("Bean to Diamond Converter")
 
-    st.markdown("Enter how many Diamonds you have, and get the best mix of packages:")
+    st.markdown("Enter the number of Beans you have, and convert them into Diamonds:")
 
-    # Input
-    diamonds = st.number_input(
-        "Available Diamonds",
+    # User input
+    beans = st.number_input(
+        "Available Beans",
         min_value=0,
         step=1,
         value=0
     )
 
-    # Define conversion packages as (diamonds_cost, beans_returned)
+    # Define packages as (beans_cost, diamonds_returned)
+    # Sorted descending by beans_cost
     packages = [
-        (2, 8),
-        (29, 109),
-        (275, 999),
-        (1105, 3999),
-        (3045, 10999),
+        (10999, 3045),
+        (3999, 1105),
+        (999, 275),
+        (109, 29),
+        (8, 2),
     ]
 
-    if st.button("Compute Optimal Conversion"):
-        total_beans, counts, leftover = compute_optimal_conversion(diamonds, packages)
+    if st.button("Convert Beans to Diamonds"):
+        total_dia, counts, leftover = greedy_bean_to_diamond(beans, packages)
 
-        st.metric("Total Beans Gained", total_beans)
-        st.metric("Diamonds Leftover", leftover)
+        st.metric("Total Diamonds Gained", total_dia)
+        st.metric("Beans Leftover", leftover)
 
-        # Show breakdown
         st.subheader("Package Breakdown")
-        breakdown_data = []
-        for (cost, beans), cnt in zip(packages, counts):
+        breakdown = []
+        for (b_cost, d_ret), cnt in zip(packages, counts):
             if cnt > 0:
-                breakdown_data.append({
-                    "Package (Diamonds → Beans)": f"{cost} → {beans}",
+                breakdown.append({
+                    "Package (Beans → Diamonds)": f"{b_cost} → {d_ret}",
                     "Times Used": cnt
                 })
-        if breakdown_data:
-            st.table(breakdown_data)
+
+        if breakdown:
+            st.table(breakdown)
         else:
-            st.info("No packages can be applied with current Diamonds.")
+            st.info("Not enough Beans to use any package.")
 
 if __name__ == "__main__":
     main()
