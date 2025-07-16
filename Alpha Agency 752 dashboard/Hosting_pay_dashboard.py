@@ -67,32 +67,31 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# === Main Content ===
-st.title("📊 Filtered Pay Chart")
+# === Tabs ===
+tab1, tab2, tab3 = st.tabs(["📊 Filtered Pay Chart", "🫘→💎 Beans to Diamonds", "💎 PK Diamond Optimizer"])
 
-if filtered_df.empty:
-    st.warning("No matching data found. Try adjusting your filters.")
-else:
-    st.write(f"Showing {len(filtered_df)} result(s) based on filters:")
+with tab1:
+    st.title("📊 Filtered Pay Chart")
+    if filtered_df.empty:
+        st.warning("No matching data found. Try adjusting your filters.")
+    else:
+        st.write(f"Showing {len(filtered_df)} result(s) based on filters:")
+        columns_to_exclude = ['Effective Broadcasting Limit', 'Billable Hours Limit', 'Bean_to_USD_Rate']
+        display_df = filtered_df.drop(columns=[col for col in columns_to_exclude if col in filtered_df.columns])
+        st.dataframe(display_df)
 
-    # Remove specified columns
-    columns_to_exclude = ['Effective Broadcasting Limit', 'Billable Hours Limit', 'Bean_to_USD_Rate']
-    display_df = filtered_df.drop(columns=[col for col in columns_to_exclude if col in filtered_df.columns])
-    st.dataframe(display_df)
+        with io.BytesIO() as buffer:
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                display_df.to_excel(writer, index=False, sheet_name='Filtered Data')
+            buffer.seek(0)
+            st.download_button(
+                label="📥 Download Filtered Data as Excel",
+                data=buffer,
+                file_name="filtered_agency_pay_chart.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
-    # Excel download
-    with io.BytesIO() as buffer:
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            display_df.to_excel(writer, index=False, sheet_name='Filtered Data')
-        buffer.seek(0)
-        st.download_button(
-            label="📥 Download Filtered Data as Excel",
-            data=buffer,
-            file_name="filtered_agency_pay_chart.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-# === Bean → Diamond Converter ===
+# === Beans → Diamonds Converter Logic ===
 def greedy_bean_to_diamond(beans, packages):
     total_diamonds = 0
     remaining = beans
@@ -105,8 +104,8 @@ def greedy_bean_to_diamond(beans, packages):
             remaining -= cnt * bean_cost
     return total_diamonds, remaining, counts
 
-def bean_to_diamond_ui():
-    st.title("Bean → Diamond Converter")
+with tab2:
+    st.title("🫘 → 💎 Beans to Diamonds Converter")
     all_packages = {
         "10999 → 3045 Diamonds": (10999, 3045),
         "3999 → 1105 Diamonds":  (3999, 1105),
@@ -127,22 +126,22 @@ def bean_to_diamond_ui():
     if st.button("Convert Beans → Diamonds"):
         if not active_packages:
             st.warning("Please select at least one package in the sidebar.")
-            return
-        diamonds, leftover, breakdown = greedy_bean_to_diamond(beans, active_packages)
-        st.metric("Total Diamonds Gained", diamonds)
-        st.metric("Beans Leftover", leftover)
-
-        st.subheader("Breakdown by Package")
-        if breakdown:
-            df = pd.DataFrame([
-                {"Package (Beans → Diamonds)": pkg, "Times Used": cnt}
-                for pkg, cnt in breakdown.items()
-            ])
-            st.table(df)
         else:
-            st.info("Not enough Beans to use any of the selected packages.")
+            diamonds, leftover, breakdown = greedy_bean_to_diamond(beans, active_packages)
+            st.metric("Total Diamonds Gained", diamonds)
+            st.metric("Beans Leftover", leftover)
 
-# === PK Diamond Optimizer ===
+            st.subheader("Breakdown by Package")
+            if breakdown:
+                df = pd.DataFrame([
+                    {"Package (Beans → Diamonds)": pkg, "Times Used": cnt}
+                    for pkg, cnt in breakdown.items()
+                ])
+                st.table(df)
+            else:
+                st.info("Not enough Beans to use any of the selected packages.")
+
+# === PK Diamond Optimizer Logic ===
 pk_data = {
     "Daily PK": [(7000, 210), (10000, 300), (20000, 600), (30000, 900),
                  (50000, 1000), (100000, 1800), (150000, 2700)],
@@ -198,36 +197,34 @@ def convert_df_to_excel(df):
         df.to_excel(writer, index=False, sheet_name='PK Breakdown')
     return output.getvalue()
 
-# === PK Diamond UI ===
-st.set_page_config(page_title="PK Diamond Optimizer", layout="centered")
-st.title("PK Diamond Optimizer 💎")
+with tab3:
+    st.title("💎 PK Diamond Optimizer")
+    diamonds = st.number_input("Enter your diamond amount", min_value=0, step=100)
 
-diamonds = st.number_input("Enter your diamond amount", min_value=0, step=100)
+    if st.button("💎 Submit PK Diamond"):
+        pk_points = diamonds * 10
+        pk_type, win_total, steps, diamonds_used, remainder = reward_breakdown(pk_points)
+        df = breakdown_to_dataframe(steps)
+        excel_data = convert_df_to_excel(df)
 
-if st.button("💎 Submit PK Diamond"):
-    pk_points = diamonds * 10
-    pk_type, win_total, steps, diamonds_used, remainder = reward_breakdown(pk_points)
-    df = breakdown_to_dataframe(steps)
-    excel_data = convert_df_to_excel(df)
+        st.subheader("🎯 Optimization Summary")
+        st.markdown(f"**🏆 PK Type:** {pk_type}")
+        st.markdown(f"**💎 Diamonds Used:** {diamonds_used}")
+        st.markdown(f"**📈 PK Score (Used):** {diamonds_used * 10}")
+        st.markdown(f"**🫘 Total Win (Beans):** {win_total}")
+        st.markdown(f"**🔸 Unused Diamonds:** {remainder // 10}")
 
-    st.subheader("🎯 Optimization Summary")
-    st.markdown(f"**🏆 PK Type:** {pk_type}")
-    st.markdown(f"**💎 Diamonds Used:** {diamonds_used}")
-    st.markdown(f"**📈 PK Score (Used):** {diamonds_used * 10}")
-    st.markdown(f"**🫘 Total Win (Beans):** {win_total}")
-    st.markdown(f"**🔸 Unused Diamonds:** {remainder // 10}")
+        st.subheader("📊 Reward Breakdown")
+        st.dataframe(df, use_container_width=True)
 
-    st.subheader("📊 Reward Breakdown")
-    st.dataframe(df, use_container_width=True)
+        st.download_button(
+            label="📥 Download Breakdown as Excel",
+            data=excel_data,
+            file_name="PK_Reward_Breakdown.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
-    st.download_button(
-        label="📥 Download Breakdown as Excel",
-        data=excel_data,
-        file_name="PK_Reward_Breakdown.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    st.caption("All calculations based on max win logic using your available diamonds.")
+        st.caption("All calculations based on max win logic using your available diamonds.")
 
 # === Footer ===
 st.markdown("""
