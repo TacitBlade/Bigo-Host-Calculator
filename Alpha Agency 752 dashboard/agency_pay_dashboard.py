@@ -195,73 +195,95 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-# --- PK Rebate Dataset ---
-rebate_data = {
-    "Daily PK": [
-        {"PK points": 7000, "Diamonds": 700, "Win Beans": 210, "Rebate %": 0.3},
-        {"PK points": 10000, "Diamonds": 1000, "Win Beans": 300, "Rebate %": 0.3},
-        {"PK points": 20000, "Diamonds": 2000, "Win Beans": 600, "Rebate %": 0.3},
-        {"PK points": 30000, "Diamonds": 3000, "Win Beans": 900, "Rebate %": 0.3},
-        {"PK points": 50000, "Diamonds": 5000, "Win Beans": 1000, "Rebate %": 0.2},
-        {"PK points": 100000, "Diamonds": 10000, "Win Beans": 1800, "Rebate %": 0.18},
-        {"PK points": 150000, "Diamonds": 15000, "Win Beans": 2700, "Rebate %": 0.18},
-    ],
-    "Talent PK": [
-        {"PK points": 5000, "Diamonds": 500, "Win Beans": 150, "Rebate %": 0.3},
-        {"PK points": 10000, "Diamonds": 1000, "Win Beans": 350, "Rebate %": 0.35},
-        {"PK points": 20000, "Diamonds": 2000, "Win Beans": 700, "Rebate %": 0.35},
-        {"PK points": 30000, "Diamonds": 3000, "Win Beans": 1000, "Rebate %": 0.333},
-        {"PK points": 50000, "Diamonds": 5000, "Win Beans": 1700, "Rebate %": 0.34},
-    ],
-    "Star Tasks": [
-        {"PK points": 2000, "Diamonds": 200, "Win Beans": 60, "Rebate %": 0.3},
-        {"PK points": 10000, "Diamonds": 1000, "Win Beans": 320, "Rebate %": 0.32},
-        {"PK points": 50000, "Diamonds": 5000, "Win Beans": 1700, "Rebate %": 0.34},
-        {"PK points": 80000, "Diamonds": 8000, "Win Beans": 2800, "Rebate %": 0.35},
-        {"PK points": 100000, "Diamonds": 10000, "Win Beans": 3500, "Rebate %": 0.35},
-        {"PK points": 120000, "Diamonds": 12000, "Win Beans": 4000, "Rebate %": 0.333},
-    ]
+# PK reward data
+pk_data = {
+    "Daily PK": [(7000, 210), (10000, 300), (20000, 600), (30000, 900),
+                 (50000, 1000), (100000, 1800), (150000, 2700)],
+    "Talent PK": [(5000, 150), (10000, 350), (20000, 700), (30000, 1000),
+                  (50000, 1700)],
+    "Agency 2 vs 2 PK": [(5000, 150), (10000, 300), (25000, 800), (50000, 1700),
+                         (70000, 2300), (100000, 3500)],
+    "Star Tasks PK": [(2000, 60), (10000, 320), (50000, 1700), (80000, 2800),
+                      (100000, 3500), (120000, 4000)]
 }
 
-# --- Helpers ---
-def sanitize_data(data):
-    all_entries = []
-    for pk_type, tiers in data.items():
-        for e in tiers:
-            entry = {**e, "PK Type": pk_type}
-            all_entries.append(entry)
-    return pd.DataFrame(all_entries)
+# Reward calculation logic
+def reward_breakdown(pk_points):
+    best_type = None
+    best_win = 0
+    best_steps = []
+    diamonds_used = 0
+    remainder = pk_points
+    for pk_type, rewards in pk_data.items():
+        rewards_sorted = sorted(rewards, reverse=True)
+        temp_points = pk_points
+        temp_win = 0
+        steps = []
+        temp_used = 0
+        for cost, win in rewards_sorted:
+            count = temp_points // cost
+            if count:
+                temp_points -= count * cost
+                temp_win += count * win
+                temp_used += count * cost
+                steps.append((count, cost, win))
+        if temp_win > best_win:
+            best_win = temp_win
+            best_type = pk_type
+            best_steps = steps
+            diamonds_used = temp_used // 10
+            remainder = temp_points
+    return best_type, best_win, best_steps, diamonds_used, remainder
 
-def filter_by_diamonds(df, diamond_limit):
-    return df[df["Diamonds"] <= diamond_limit].copy()
+def breakdown_to_dataframe(steps):
+    return pd.DataFrame([
+        {
+            "Matches": count,
+            "PK Points Used": count * cost,
+            "Win per Match": win,
+            "Total Win Points": count * win
+        }
+        for count, cost, win in steps
+    ])
 
-def generate_excel_download(df, filename):
-    buffer = BytesIO()
-    df.to_excel(buffer, index=False, engine='openpyxl')
-    buffer.seek(0)
-    st.download_button("📥 Download Excel", data=buffer, file_name=filename,
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+def convert_df_to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='PK Breakdown')
+    return output.getvalue()
 
-# --- Streamlit App ---
-st.set_page_config(page_title="PK Rebate Explorer", layout="centered")
-st.title("💎 PK Rebate Explorer")
+# UI
+st.set_page_config(page_title="PK Diamond Optimizer", layout="centered")
+st.title("PK Diamond Optimizer 💎")
 
-diamond_input = st.number_input("Enter your available Diamonds", min_value=0, value=1000, step=100)
-sort_by = st.selectbox("Sort by", ["Win Beans", "Rebate %"])
+diamonds = st.number_input("Enter your diamond amount", min_value=0, step=100)
+pk_points = diamonds * 10
 
-df_all = sanitize_data(rebate_data)
-df_filtered = filter_by_diamonds(df_all, diamond_input)
+if diamonds:
+    pk_type, win_total, steps, diamonds_used, remainder = reward_breakdown(pk_points)
+    df = breakdown_to_dataframe(steps)
+    excel_data = convert_df_to_excel(df)
 
-if not df_filtered.empty:
-    df_sorted = df_filtered.sort_values(by=sort_by, ascending=False).reset_index(drop=True)
-    st.subheader("📊 Matching PK Tiers")
-    st.dataframe(df_sorted)
-    generate_excel_download(df_sorted, f"pk_tiers_{diamond_input}.xlsx")
-else:
-    st.warning("No PK tiers available within that diamond budget.")
+    st.subheader("🎯 Optimization Summary")
+    st.markdown(f"**🏆 PK Type:** {pk_type}")
+    st.markdown(f"**💎 Diamonds Used:** {diamonds_used}")
+    st.markdown(f"**📈 PK Score (Used):** {diamonds_used * 10}")
+    st.markdown(f"**🫘 Total Win (Beans):** {win_total}")
+    st.markdown(f"**🔸 Unused Diamonds:** {remainder // 10}")
 
-with st.expander("🛠 Debug Panel", expanded=False):
-    st.json({k: v[:1] for k, v in rebate_data.items()})
+    st.subheader("📊 Reward Breakdown")
+    st.dataframe(df, use_container_width=True)
+
+    st.download_button(
+        label="📥 Download Breakdown as Excel",
+        data=excel_data,
+        file_name="PK_Reward_Breakdown.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    st.caption("All calculations based on max win logic using your available diamonds.")
+
+
         # === Footer ===
 st.markdown("""
 <hr style="margin-top: 50px;">
