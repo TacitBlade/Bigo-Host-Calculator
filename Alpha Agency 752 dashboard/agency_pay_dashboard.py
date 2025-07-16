@@ -195,22 +195,12 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
-def load_pk_data_from_path(file_path: str):
-    """
-    Load PK events from a local Excel file.
-    Expect columns: 'PK Type', 'Cost', 'Rebate'
-    """
-    path = Path(file_path)
-    if not path.exists():
-        st.error(f"File not found: {file_path}")
-        return pd.DataFrame(columns=['PK Type', 'Cost', 'Rebate'])
-    try:
-        df = pd.read_excel(path, sheet_name='RulesAndRewards')
-        df = df[['PK Type', 'Cost', 'Rebate']].dropna()
-        return df.sort_values('Rebate', ascending=False).reset_index(drop=True)
-    except Exception as e:
-        st.error(f"Error reading {file_path}: {e}")
-        return pd.DataFrame(columns=['PK Type', 'Cost', 'Rebate'])
+# === Load Dataset ===
+try:
+    df = pd.read_excel("RulesAndRewards.xlsx", sheet_name="Sheet1")
+except Exception as e:
+    st.error(f"Failed to load data file: {e}")
+    st.stop()
 
 def compute_allocation(diamonds: int, pk_df: pd.DataFrame):
     """
@@ -276,7 +266,8 @@ def main():
     )
 
     if st.button("Calculate"):
-        pk_df = load_pk_data_from_path(file_path)
+        pk_df = pd.read_excel("RulesAndRewards.xlsx", sheet_name="Sheet1")
+
         if pk_df.empty:
             st.warning("No PK data to process.")
             return
