@@ -190,3 +190,123 @@ st.markdown("""
     Contact: info@alphaagency752.com | © 2025
 </div>
 """, unsafe_allow_html=True)
+
+import streamlit as st
+import pandas as pd
+
+def load_pk_data(uploaded_file):
+    """
+    Load PK events from an Excel file. Expect columns: 
+      'PK Type', 'Cost', 'Rebate'
+    """
+    try:
+        df = pd.read_excel(uploaded_file, sheet_name='RulesAndRewards')
+        df = df[['PK Type', 'Cost', 'Rebate']].dropna()
+        return df.sort_values('Rebate', ascending=False).reset_index(drop=True)
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame(columns=['PK Type', 'Cost', 'Rebate'])
+
+def compute_allocation(diamonds, pk_df):
+    """
+    Iterate through each PK event, allocate as many runs as possible,
+    deduct spent diamonds, and accumulate rebates.
+    """
+    results = []
+    remaining = diamonds
+    total_rebate = 0
+
+    for _, row in pk_df.iterrows():
+        cost = int(row['Cost'])
+        rebate = int(row['Rebate'])
+        if remaining < cost:
+            # cannot play this PK event
+            results.append({
+                'PK Type': row['PK Type'],
+                'Cost': cost,
+                'Rebate': rebate,
+                'Count': 0,
+                'Spent': 0,
+                'Earned Rebate': 0,
+                'Leftover Diamonds': remaining
+            })
+            continue
+
+        count = remaining // cost
+        spent = count * cost
+        earned = count * rebate
+        remaining -= spent
+        total_rebate += earned
+
+        results.append({
+            'PK Type': row['PK Type'],
+            'Cost': cost,
+            'Rebate': rebate,
+            'Count': count,
+            'Spent': spent,
+            'Earned Rebate': earned,
+            'Leftover Diamonds': remaining
+        })
+
+    return pd.DataFrame(results), total_rebate, remaining
+
+def main():
+    st.title("💎 Diamond-to-PK Reward Planner")
+
+    st.markdown("""
+    1. Upload your **Rules & Rewards** Excel file (sheet named `RulesAndRewards`).  
+    2. Enter your diamond balance.  
+    3. View how many of each PK event you can play for maximal rebates.
+    """)
+
+    uploaded_file = st.file_uploader(
+        "Upload Rules & Rewards Excel file", 
+        type=['xlsx'], 
+        help="Should contain columns: PK Type, Cost, Rebate"
+    )
+
+    # Fallback sample data if no file is uploaded
+    if uploaded_file:
+        pk_df = load_pk_data(uploaded_file)
+    else:
+        st.info("Using sample PK data. Upload your file to override.")
+        pk_df = pd.DataFrame([
+            {"PK Type": "Legendary Clash", "Cost": 500, "Rebate": 1500},
+            {"PK Type": "Elite Showdown",   "Cost": 300, "Rebate":  800},
+            {"PK Type": "Rookie Brawl",     "Cost": 100, "Rebate":  200},
+        ]).sort_values('Rebate', ascending=False).reset_index(drop=True)
+
+    diamonds = st.number_input(
+        "Enter your diamond balance:", 
+        min_value=0, 
+        step=1, 
+        value=0
+    )
+
+    if st.button("Calculate Rewards"):
+        if diamonds <= 0:
+            st.warning("Please enter a positive diamond amount.")
+            return
+
+        allocation_df, total_rebate, leftover = compute_allocation(diamonds, pk_df)
+
+        st.subheader("📊 Allocation Breakdown")
+        st.dataframe(allocation_df)
+
+        st.markdown(f"""
+        **Total Diamonds Spent:** {diamonds - leftover}  
+        **Total Rebate Earned:** {total_rebate}  
+        **Diamonds Remaining:** {leftover}
+        """)
+
+if __name__ == "__main__":
+    main()
+
+        # === Footer ===
+st.markdown("""
+<hr style="margin-top: 50px;">
+<div style="text-align: center; font-size: 14px; color: #6B4E9B;">
+    <strong>Alpha Agency 752</strong> — Streamlined. Strategic. Alpha.<br>
+    Contact: info@alphaagency752.com | © 2025
+</div>
+""", unsafe_allow_html=True)
