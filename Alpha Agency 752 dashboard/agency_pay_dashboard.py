@@ -101,67 +101,92 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 import streamlit as st
+import pandas as pd
+
+# --- Conversion Logic ---
 
 def greedy_bean_to_diamond(beans, packages):
     """
-    Greedy conversion: use the highest-tier bean packages first.
-    Returns total diamonds, package counts, and leftover beans.
+    Greedily convert Beans to Diamonds using the provided packages.
+    Returns total diamonds, leftover beans, and package usage counts.
     """
-    counts = [0] * len(packages)
     total_diamonds = 0
-    remaining_beans = beans
+    remaining = beans
+    counts = {}
 
-    for i, (bean_cost, dia_return) in enumerate(packages):
-        if remaining_beans >= bean_cost:
-            cnt = remaining_beans // bean_cost
-            counts[i] = cnt
+    # Sort packages descending by bean cost
+    for bean_cost, dia_return in sorted(packages, reverse=True):
+        if remaining >= bean_cost:
+            cnt = remaining // bean_cost
+            counts[f"{bean_cost}→{dia_return}"] = cnt
             total_diamonds += cnt * dia_return
-            remaining_beans -= cnt * bean_cost
+            remaining -= cnt * bean_cost
 
-    return total_diamonds, counts, remaining_beans
+    return total_diamonds, remaining, counts
+
+# --- Streamlit UI ---
 
 def main():
-    st.title("Bean to Diamond Converter")
+    st.title("Bean → Diamond Converter")
 
-    st.markdown("Enter the number of Beans you have, and convert them into Diamonds:")
+    # Define all available packages
+    all_packages = {
+        "10999 → 3045 Diamonds": (10999, 3045),
+        "3999 → 1105 Diamonds":  (3999, 1105),
+        "999 → 275 Diamonds":    (999, 275),
+        "109 → 29 Diamonds":     (109, 29),
+        "8 → 2 Diamonds":        (8, 2),
+    }
 
-    # User input
-    beans = st.number_input(
-        "Available Beans",
-        min_value=0,
-        step=1,
-        value=0
+    # Sidebar: select which packages to include
+    st.sidebar.header("Select Conversion Packages")
+    selected_labels = st.sidebar.multiselect(
+        "Choose tiers to include",
+        options=list(all_packages.keys()),
+        default=list(all_packages.keys())
     )
 
-    # Define packages as (beans_cost, diamonds_returned)
-    # Sorted descending by beans_cost
-    packages = [
-        (10999, 3045),
-        (3999, 1105),
-        (999, 275),
-        (109, 29),
-        (8, 2),
-    ]
+    # Build the active package list
+    active_packages = [all_packages[label] for label in selected_labels]
 
-    if st.button("Convert Beans to Diamonds"):
-        total_dia, counts, leftover = greedy_bean_to_diamond(beans, packages)
+    # Main input
+    beans = st.number_input(
+        "Enter how many Beans you have",
+        min_value=0,
+        value=0,
+        step=1
+    )
 
-        st.metric("Total Diamonds Gained", total_dia)
+    # Perform conversion when button is clicked
+    if st.button("Convert Beans → Diamonds"):
+        if not active_packages:
+            st.warning("Please select at least one package in the sidebar.")
+            return
+
+        diamonds, leftover, breakdown = greedy_bean_to_diamond(beans, active_packages)
+
+        # Display results
+        st.metric("Total Diamonds Gained", diamonds)
         st.metric("Beans Leftover", leftover)
 
-        st.subheader("Package Breakdown")
-        breakdown = []
-        for (b_cost, d_ret), cnt in zip(packages, counts):
-            if cnt > 0:
-                breakdown.append({
-                    "Package (Beans → Diamonds)": f"{b_cost} → {d_ret}",
-                    "Times Used": cnt
-                })
-
+        st.subheader("Breakdown by Package")
         if breakdown:
-            st.table(breakdown)
+            df = pd.DataFrame([
+                {"Package (Beans → Diamonds)": pkg, "Times Used": cnt}
+                for pkg, cnt in breakdown.items()
+            ])
+            st.table(df)
         else:
-            st.info("Not enough Beans to use any package.")
+            st.info("Not enough Beans to use any of the selected packages.")
 
 if __name__ == "__main__":
     main()
+
+    # === Footer ===
+st.markdown("""
+<hr style="margin-top: 50px;">
+<div style="text-align: center; font-size: 14px; color: #6B4E9B;">
+    <strong>Alpha Agency 752</strong> — Streamlined. Strategic. Alpha.<br>
+    Contact: info@alphaagency752.com | © 2025
+</div>
+""", unsafe_allow_html=True)
