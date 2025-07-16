@@ -99,3 +99,79 @@ st.markdown("""
     Contact: info@alphaagency752.com | © 2025
 </div>
 """, unsafe_allow_html=True)
+
+import streamlit as st
+
+def compute_optimal_conversion(diamonds, packages):
+    """
+    Dynamic programming to maximize beans for given diamonds.
+    Returns total beans, counts per package, and leftover diamonds.
+    """
+    # dp[d] = max beans using up to d diamonds
+    dp = [0] * (diamonds + 1)
+    # last_choice[d] = index of package used last to achieve dp[d]
+    last_choice = [-1] * (diamonds + 1)
+
+    for i, (cost, beans) in enumerate(packages):
+        for d in range(cost, diamonds + 1):
+            candidate = dp[d - cost] + beans
+            if candidate > dp[d]:
+                dp[d] = candidate
+                last_choice[d] = i
+
+    # Reconstruct package counts
+    counts = [0] * len(packages)
+    d = diamonds
+    while d > 0 and last_choice[d] != -1:
+        pkg_idx = last_choice[d]
+        counts[pkg_idx] += 1
+        d -= packages[pkg_idx][0]
+
+    leftover = d
+    total_beans = dp[diamonds]
+    return total_beans, counts, leftover
+
+def main():
+    st.title("Bean Conversion Optimizer")
+
+    st.markdown("Enter how many Diamonds you have, and get the best mix of packages:")
+
+    # Input
+    diamonds = st.number_input(
+        "Available Diamonds",
+        min_value=0,
+        step=1,
+        value=0
+    )
+
+    # Define conversion packages as (diamonds_cost, beans_returned)
+    packages = [
+        (2, 8),
+        (29, 109),
+        (275, 999),
+        (1105, 3999),
+        (3045, 10999),
+    ]
+
+    if st.button("Compute Optimal Conversion"):
+        total_beans, counts, leftover = compute_optimal_conversion(diamonds, packages)
+
+        st.metric("Total Beans Gained", total_beans)
+        st.metric("Diamonds Leftover", leftover)
+
+        # Show breakdown
+        st.subheader("Package Breakdown")
+        breakdown_data = []
+        for (cost, beans), cnt in zip(packages, counts):
+            if cnt > 0:
+                breakdown_data.append({
+                    "Package (Diamonds → Beans)": f"{cost} → {beans}",
+                    "Times Used": cnt
+                })
+        if breakdown_data:
+            st.table(breakdown_data)
+        else:
+            st.info("No packages can be applied with current Diamonds.")
+
+if __name__ == "__main__":
+    main()
