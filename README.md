@@ -1,1 +1,0 @@
-# Bigo-Host-Calculator
