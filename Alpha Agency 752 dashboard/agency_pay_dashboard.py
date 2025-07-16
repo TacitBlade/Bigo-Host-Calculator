@@ -199,7 +199,7 @@ total_diamonds = st.number_input("Enter your total diamonds:", min_value=0, step
 
 # === Load Rules & Rewards Sheet ===
 try:
-    pk_df = pd.read_excel("July 2025 UK Agency&Host Events .xlsx", sheet_name="rules and rewards")
+    pk_df = pd.read_excel("July 2025 UK Agency&Host Events .xlsx", sheet_name="Rules and rewards")
 except Exception as e:
     st.error(f"Could not load 'rules and rewards' sheet: {e}")
     st.stop()
