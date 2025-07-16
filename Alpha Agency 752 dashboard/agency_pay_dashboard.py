@@ -197,7 +197,7 @@ from pathlib import Path
 
 # === Load Dataset ===
 try:
-    df = pd.read_excel("RulesAndRewards.xlsx", sheet_name="Sheet1")
+    df = pd.read_excel("RulesAndRewards.xlsx", sheet_name="RulesAndRewards")
 except Exception as e:
     st.error(f"Failed to load data file: {e}")
     st.stop()
