@@ -32,15 +32,12 @@ df['Bean_to_USD_Rate'] = df['Broadcaster Remuneration (USD)'] / df['Target Beans
 # === Sidebar Filters ===
 st.sidebar.header("🔎 Filter Criteria")
 
-# Filter 1: Rank
 rank_options = sorted(df['Ranking'].dropna().unique())
 selected_ranks = st.sidebar.multiselect("Select Rank(s)", rank_options, default=rank_options)
 
-# Filter 2: Salary Range
 min_salary, max_salary = int(df['Salary in Beans'].min()), int(df['Salary in Beans'].max())
 salary_range = st.sidebar.slider("Salary in Beans Range", min_salary, max_salary, (min_salary, max_salary), step=1000)
 
-# Filter 3: Convertible Diamonds Range
 min_diamonds, max_diamonds = int(df['Convertible Diamonds'].min()), int(df['Convertible Diamonds'].max())
 diamonds_range = st.sidebar.slider("Convertible Diamonds Range", min_diamonds, max_diamonds, (min_diamonds, max_diamonds), step=1000)
 
@@ -51,7 +48,7 @@ filtered_df = df[
     df['Convertible Diamonds'].between(*diamonds_range)
 ]
 
-# === Styling: Custom Buttons & UI Cleanup ===
+# === Styling ===
 st.markdown("""
     <style>
     div.stDownloadButton > button {
@@ -77,12 +74,16 @@ if filtered_df.empty:
     st.warning("No matching data found. Try adjusting your filters.")
 else:
     st.write(f"Showing {len(filtered_df)} result(s) based on filters:")
-    st.dataframe(filtered_df)
 
-    # Convert to Excel for download
+    # Remove specified columns
+    columns_to_exclude = ['Effective Broadcasting Limit', 'Billable Hours Limit', 'Bean_to_USD_Rate']
+    display_df = filtered_df.drop(columns=[col for col in columns_to_exclude if col in filtered_df.columns])
+    st.dataframe(display_df)
+
+    # Excel download
     with io.BytesIO() as buffer:
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            filtered_df.to_excel(writer, index=False, sheet_name='Filtered Data')
+            display_df.to_excel(writer, index=False, sheet_name='Filtered Data')
         buffer.seek(0)
         st.download_button(
             label="📥 Download Filtered Data as Excel",
@@ -91,45 +92,21 @@ else:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-# === Footer ===
-st.markdown("""
-<hr style="margin-top: 50px;">
-<div style="text-align: center; font-size: 14px; color: #6B4E9B;">
-    <strong>Alpha Agency 752</strong> — Streamlined. Strategic. Alpha.<br>
-    Contact: info@alphaagency752.com | © 2025
-</div>
-""", unsafe_allow_html=True)
-
-import streamlit as st
-import pandas as pd
-
-# --- Conversion Logic ---
-
+# === Bean → Diamond Converter ===
 def greedy_bean_to_diamond(beans, packages):
-    """
-    Greedily convert Beans to Diamonds using the provided packages.
-    Returns total diamonds, leftover beans, and package usage counts.
-    """
     total_diamonds = 0
     remaining = beans
     counts = {}
-
-    # Sort packages descending by bean cost
     for bean_cost, dia_return in sorted(packages, reverse=True):
         if remaining >= bean_cost:
             cnt = remaining // bean_cost
             counts[f"{bean_cost}→{dia_return}"] = cnt
             total_diamonds += cnt * dia_return
             remaining -= cnt * bean_cost
-
     return total_diamonds, remaining, counts
 
-# --- Streamlit UI ---
-
-def main():
+def bean_to_diamond_ui():
     st.title("Bean → Diamond Converter")
-
-    # Define all available packages
     all_packages = {
         "10999 → 3045 Diamonds": (10999, 3045),
         "3999 → 1105 Diamonds":  (3999, 1105),
@@ -138,34 +115,20 @@ def main():
         "8 → 2 Diamonds":        (8, 2),
     }
 
-    # Sidebar: select which packages to include
     st.sidebar.header("Select Conversion Packages")
     selected_labels = st.sidebar.multiselect(
         "Choose tiers to include",
         options=list(all_packages.keys()),
         default=list(all_packages.keys())
     )
-
-    # Build the active package list
     active_packages = [all_packages[label] for label in selected_labels]
+    beans = st.number_input("Enter how many Beans you have", min_value=0, value=0, step=1)
 
-    # Main input
-    beans = st.number_input(
-        "Enter how many Beans you have",
-        min_value=0,
-        value=0,
-        step=1
-    )
-
-    # Perform conversion when button is clicked
     if st.button("Convert Beans → Diamonds"):
         if not active_packages:
             st.warning("Please select at least one package in the sidebar.")
             return
-
         diamonds, leftover, breakdown = greedy_bean_to_diamond(beans, active_packages)
-
-        # Display results
         st.metric("Total Diamonds Gained", diamonds)
         st.metric("Beans Leftover", leftover)
 
@@ -179,23 +142,7 @@ def main():
         else:
             st.info("Not enough Beans to use any of the selected packages.")
 
-if __name__ == "__main__":
-    main()
-
-    # === Footer ===
-st.markdown("""
-<hr style="margin-top: 50px;">
-<div style="text-align: center; font-size: 14px; color: #6B4E9B;">
-    <strong>Alpha Agency 752</strong> — Streamlined. Strategic. Alpha.<br>
-    Contact: info@alphaagency752.com | © 2025
-</div>
-""", unsafe_allow_html=True)
-
-import streamlit as st
-import pandas as pd
-from io import BytesIO
-
-# PK reward data
+# === PK Diamond Optimizer ===
 pk_data = {
     "Daily PK": [(7000, 210), (10000, 300), (20000, 600), (30000, 900),
                  (50000, 1000), (100000, 1800), (150000, 2700)],
@@ -207,7 +154,6 @@ pk_data = {
                       (100000, 3500), (120000, 4000)]
 }
 
-# Reward calculation logic
 def reward_breakdown(pk_points):
     best_type = None
     best_win = 0
@@ -247,19 +193,19 @@ def breakdown_to_dataframe(steps):
     ])
 
 def convert_df_to_excel(df):
-    output = BytesIO()
+    output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='PK Breakdown')
     return output.getvalue()
 
-# UI
+# === PK Diamond UI ===
 st.set_page_config(page_title="PK Diamond Optimizer", layout="centered")
 st.title("PK Diamond Optimizer 💎")
 
 diamonds = st.number_input("Enter your diamond amount", min_value=0, step=100)
-pk_points = diamonds * 10
 
-if diamonds:
+if st.button("💎 Submit PK Diamond"):
+    pk_points = diamonds * 10
     pk_type, win_total, steps, diamonds_used, remainder = reward_breakdown(pk_points)
     df = breakdown_to_dataframe(steps)
     excel_data = convert_df_to_excel(df)
@@ -283,8 +229,7 @@ if diamonds:
 
     st.caption("All calculations based on max win logic using your available diamonds.")
 
-
-        # === Footer ===
+# === Footer ===
 st.markdown("""
 <hr style="margin-top: 50px;">
 <div style="text-align: center; font-size: 14px; color: #6B4E9B;">
