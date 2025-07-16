@@ -9,7 +9,7 @@ st.set_page_config(page_title="Alpha Agency 752 Dashboard", layout="wide")
 # === Load Banner Image ===
 try:
     banner = Image.open("alpha_agency_banner.png")
-    st.image(banner, use_column_width=True)
+    st.image(banner, use_container_width=True)
 except FileNotFoundError:
     st.error("Banner image not found. Please make sure 'alpha_agency_banner.png' is in the project folder.")
 
