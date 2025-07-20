@@ -1,22 +1,16 @@
 version: 1.0
 
-# 🐍 Runtime & build settings
 runtime: python3
+
 build:
   commands:
     - pip install -r requirements.txt
 
-# 🚀 App execution
 run:
   command: streamlit run app.py
 
-# 🌐 Port configuration (App Runner uses port 8080 by default)
 port: 8080
 
-# 📁 Health checks
-health_check_path: /
-
-# 📄 Optional env vars (customize if needed)
 env:
   - name: STREAMLIT_SERVER_HEADLESS
     value: "true"
