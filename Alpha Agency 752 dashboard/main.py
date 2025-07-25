@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from PIL import Image
 import io
+import numpy as np
 
 # === Page Setup ===
 st.set_page_config(page_title="Alpha Agency 752 Dashboard", layout="wide")
@@ -20,33 +21,40 @@ Explore pay tiers, Beans, and Diamonds. Filter rankings dynamically, download yo
 """)
 
 # === Load Dataset ===
-try:
-    df = pd.read_excel("Alpha_Omega_Agency_Pay_Chart_with_Diamonds.xlsx", sheet_name="Sheet1")
-except Exception as e:
-    st.error(f"Failed to load data file: {e}")
-    st.stop()
+@st.cache_data
+def load_dataset():
+    """Load and cache the Excel dataset"""
+    try:
+        df = pd.read_excel("Alpha_Omega_Agency_Pay_Chart_with_Diamonds.xlsx", sheet_name="Sheet1")
+        # Clean column names - remove extra spaces
+        df.columns = df.columns.str.strip()
+        return df
+    except FileNotFoundError:
+        st.error("Data file 'Alpha_Omega_Agency_Pay_Chart_with_Diamonds.xlsx' not found.")
+        st.stop()
+    except Exception as e:
+        st.error(f"Failed to load data file: {e}")
+        st.stop()
+
+# Load data once at startup
+if 'df' not in st.session_state:
+    st.session_state.df = load_dataset()
+
+df = st.session_state.df
 
 # === Preprocess: Add Bean-to-USD Conversion ===
-df['Bean_to_USD_Rate'] = df['Broadcaster Remuneration (USD)'] / df['Target Beans']
-
-# === Sidebar Filters ===
-st.sidebar.header("🔎 Filter Criteria")
-
-rank_options = sorted(df['Ranking'].dropna().unique())
-selected_ranks = st.sidebar.multiselect("Select Rank(s)", rank_options, default=rank_options)
-
-min_salary, max_salary = int(df['Salary in Beans'].min()), int(df['Salary in Beans'].max())
-salary_range = st.sidebar.slider("Salary in Beans Range", min_salary, max_salary, (min_salary, max_salary), step=1000)
-
-min_diamonds, max_diamonds = int(df['Convertible Diamonds'].min()), int(df['Convertible Diamonds'].max())
-diamonds_range = st.sidebar.slider("Convertible Diamonds Range", min_diamonds, max_diamonds, (min_diamonds, max_diamonds), step=1000)
-
-# === Apply Filters ===
-filtered_df = df[
-    df['Ranking'].isin(selected_ranks) &
-    df['Salary in Beans'].between(*salary_range) &
-    df['Convertible Diamonds'].between(*diamonds_range)
-]
+try:
+    if 'Broadcaster Remuneration (USD)' in df.columns and 'Target Beans' in df.columns:
+        # Safely handle division by zero
+        df['Bean_to_USD_Rate'] = np.where(
+            df['Target Beans'] != 0,
+            df['Broadcaster Remuneration (USD)'] / df['Target Beans'],
+            0
+        )
+    else:
+        st.warning("Missing columns for Bean-to-USD conversion. Available columns: " + ", ".join(df.columns))
+except Exception as e:
+    st.warning(f"Error in Bean-to-USD conversion: {e}")
 
 # === Styling ===
 st.markdown("""
@@ -57,179 +65,406 @@ st.markdown("""
         border-radius: 5px;
         font-weight: bold;
         padding: 8px 20px;
+        border: none;
     }
     div.stDownloadButton > button:hover {
         background-color: #553B7A;
         color: #FFDDEE;
     }
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    .main > div {
+        padding-top: 2rem;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# === Tabs ===
-tab1, tab2, tab3 = st.tabs(["📊 Filtered Pay Chart", "🫘→💎 Beans to Diamonds", "💎 PK Diamond Optimizer"])
+# === Helper Functions ===
+def create_excel_download(dataframe, sheet_name='Sheet1'):
+    """Create Excel file for download with error handling"""
+    if dataframe is None or dataframe.empty:
+        st.error("No data to export")
+        return None
+    
+    try:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            dataframe.to_excel(writer, index=False, sheet_name=sheet_name)
+        output.seek(0)
+        return output.getvalue()
+    except Exception as e:
+        st.error(f"Error creating Excel file: {e}")
+        return None
 
-with tab1:
-    st.title("📊 Filtered Pay Chart")
-    if filtered_df.empty:
-        st.warning("No matching data found. Try adjusting your filters.")
-    else:
-        st.write(f"Showing {len(filtered_df)} result(s) based on filters:")
-        columns_to_exclude = ['Effective Broadcasting Limit', 'Billable Hours Limit', 'Bean_to_USD_Rate']
-        display_df = filtered_df.drop(columns=[col for col in columns_to_exclude if col in filtered_df.columns])
-        st.dataframe(display_df)
-
-        with io.BytesIO() as buffer:
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                display_df.to_excel(writer, index=False, sheet_name='Filtered Data')
-            buffer.seek(0)
-            st.download_button(
-                label="📥 Download Filtered Data as Excel",
-                data=buffer,
-                file_name="filtered_agency_pay_chart.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
-# === Beans → Diamonds Converter Logic ===
 def greedy_bean_to_diamond(beans, packages):
+    """Convert beans to diamonds using greedy algorithm with validation"""
+    if not packages or beans <= 0:
+        return 0, beans, {}
+    
     total_diamonds = 0
-    remaining = beans
+    remaining = int(beans)
     counts = {}
-    for bean_cost, dia_return in sorted(packages, reverse=True):
-        if remaining >= bean_cost:
-            cnt = remaining // bean_cost
-            counts[f"{bean_cost}→{dia_return}"] = cnt
-            total_diamonds += cnt * dia_return
-            remaining -= cnt * bean_cost
+    
+    try:
+        for bean_cost, dia_return in sorted(packages, reverse=True, key=lambda x: x[0]):
+            if remaining >= bean_cost:
+                cnt = remaining // bean_cost
+                if cnt > 0:
+                    counts[f"{bean_cost}→{dia_return}"] = cnt
+                    total_diamonds += cnt * dia_return
+                    remaining -= cnt * bean_cost
+    except Exception as e:
+        st.error(f"Error in bean conversion: {e}")
+        return 0, beans, {}
+    
     return total_diamonds, remaining, counts
 
-with tab2:
-    st.title("🫘 → 💎 Beans to Diamonds Converter")
-    all_packages = {
-        "10999 → 3045 Diamonds": (10999, 3045),
-        "3999 → 1105 Diamonds":  (3999, 1105),
-        "999 → 275 Diamonds":    (999, 275),
-        "109 → 29 Diamonds":     (109, 29),
-        "8 → 2 Diamonds":        (8, 2),
-    }
-
-    st.sidebar.header("Select Conversion Packages")
-    selected_labels = st.sidebar.multiselect(
-        "Choose tiers to include",
-        options=list(all_packages.keys()),
-        default=list(all_packages.keys())
-    )
-    active_packages = [all_packages[label] for label in selected_labels]
-    beans = st.number_input("Enter how many Beans you have", min_value=0, value=0, step=1)
-
-    if st.button("Convert Beans → Diamonds"):
-        if not active_packages:
-            st.warning("Please select at least one package in the sidebar.")
-        else:
-            diamonds, leftover, breakdown = greedy_bean_to_diamond(beans, active_packages)
-            st.metric("Total Diamonds Gained", diamonds)
-            st.metric("Beans Leftover", leftover)
-
-            st.subheader("Breakdown by Package")
-            if breakdown:
-                df = pd.DataFrame([
-                    {"Package (Beans → Diamonds)": pkg, "Times Used": cnt}
-                    for pkg, cnt in breakdown.items()
-                ])
-                st.table(df)
-            else:
-                st.info("Not enough Beans to use any of the selected packages.")
-
-# === PK Diamond Optimizer Logic ===
-pk_data = {
-    "Daily PK": [(7000, 210), (10000, 300), (20000, 600), (30000, 900),
-                 (50000, 1000), (100000, 1800), (150000, 2700)],
-    "Talent PK": [(5000, 150), (10000, 350), (20000, 700), (30000, 1000),
-                  (50000, 1700)],
-    "Agency 2 vs 2 PK": [(5000, 150), (10000, 300), (25000, 800), (50000, 1700),
-                         (70000, 2300), (100000, 3500)],
-    "Star Tasks PK": [(2000, 60), (10000, 320), (50000, 1700), (80000, 2800),
-                      (100000, 3500), (120000, 4000)]
-}
-
 def reward_breakdown(pk_points):
+    """Calculate optimal PK reward breakdown with validation"""
+    if pk_points <= 0:
+        return None, 0, [], 0, pk_points
+    
+    pk_data = {
+        "Daily PK": [(7000, 210), (10000, 300), (20000, 600), (30000, 900),
+                     (50000, 1000), (100000, 1800), (150000, 2700)],
+        "Talent PK": [(5000, 150), (10000, 350), (20000, 700), (30000, 1000),
+                      (50000, 1700)],
+        "Agency 2 vs 2 PK": [(5000, 150), (10000, 300), (25000, 800), (50000, 1700),
+                             (70000, 2300), (100000, 3500)],
+        "Star Tasks PK": [(2000, 60), (10000, 320), (50000, 1700), (80000, 2800),
+                          (100000, 3500), (120000, 4000)]
+    }
+    
     best_type = None
     best_win = 0
     best_steps = []
     diamonds_used = 0
     remainder = pk_points
-    for pk_type, rewards in pk_data.items():
-        rewards_sorted = sorted(rewards, reverse=True)
-        temp_points = pk_points
-        temp_win = 0
-        steps = []
-        temp_used = 0
-        for cost, win in rewards_sorted:
-            count = temp_points // cost
-            if count:
-                temp_points -= count * cost
-                temp_win += count * win
-                temp_used += count * cost
-                steps.append((count, cost, win))
-        if temp_win > best_win:
-            best_win = temp_win
-            best_type = pk_type
-            best_steps = steps
-            diamonds_used = temp_used // 10
-            remainder = temp_points
+    
+    try:
+        for pk_type, rewards in pk_data.items():
+            rewards_sorted = sorted(rewards, reverse=True, key=lambda x: x[0])
+            temp_points = pk_points
+            temp_win = 0
+            steps = []
+            temp_used = 0
+            
+            for cost, win in rewards_sorted:
+                if temp_points >= cost:
+                    count = temp_points // cost
+                    if count > 0:
+                        temp_points -= count * cost
+                        temp_win += count * win
+                        temp_used += count * cost
+                        steps.append((count, cost, win))
+            
+            if temp_win > best_win:
+                best_win = temp_win
+                best_type = pk_type
+                best_steps = steps
+                diamonds_used = temp_used // 10
+                remainder = temp_points
+    except Exception as e:
+        st.error(f"Error in PK calculation: {e}")
+        return None, 0, [], 0, pk_points
+    
     return best_type, best_win, best_steps, diamonds_used, remainder
 
-def breakdown_to_dataframe(steps):
-    return pd.DataFrame([
-        {
-            "Matches": count,
-            "PK Points Used": count * cost,
-            "Win per Match": win,
-            "Total Win Points": count * win
+# === Initialize Session State ===
+if 'current_tab' not in st.session_state:
+    st.session_state.current_tab = 0
+
+# === Tabs ===
+tab1, tab2, tab3 = st.tabs(["📊 Filtered Pay Chart", "🫘→💎 Beans to Diamonds", "💎 PK Diamond Optimizer"])
+
+# === TAB 1: Filtered Pay Chart ===
+with tab1:
+    st.session_state.current_tab = 1
+    
+    # Clear sidebar
+    with st.sidebar:
+        st.header("🔎 Filter Criteria")
+        
+        # Check if required columns exist
+        required_columns = ['Ranking', 'Salary in Beans', 'Convertible Diamonds']
+        available_columns = [col for col in required_columns if col in df.columns]
+        
+        if not available_columns:
+            st.error("Required columns not found in dataset")
+            st.write("Available columns:", list(df.columns))
+        
+        # Rank filter
+        selected_ranks = []
+        if 'Ranking' in df.columns:
+            try:
+                rank_options = sorted([r for r in df['Ranking'].dropna().unique() if pd.notna(r)])
+                if rank_options:
+                    selected_ranks = st.multiselect(
+                        "Select Rank(s)", 
+                        rank_options, 
+                        default=rank_options[:min(5, len(rank_options))],  # Limit default selection
+                        key="tab1_ranks"
+                    )
+            except Exception as e:
+                st.error(f"Error processing rankings: {e}")
+
+        # Salary filter
+        salary_range = (0, 0)
+        if 'Salary in Beans' in df.columns:
+            try:
+                salary_col = df['Salary in Beans'].dropna()
+                if not salary_col.empty:
+                    min_salary = int(salary_col.min())
+                    max_salary = int(salary_col.max())
+                    if min_salary < max_salary:
+                        salary_range = st.slider(
+                            "Salary in Beans Range", 
+                            min_salary, 
+                            max_salary, 
+                            (min_salary, max_salary), 
+                            step=max(1000, (max_salary - min_salary) // 100),
+                            key="tab1_salary"
+                        )
+            except Exception as e:
+                st.error(f"Error processing salary data: {e}")
+
+        # Diamonds filter
+        diamonds_range = (0, 0)
+        if 'Convertible Diamonds' in df.columns:
+            try:
+                diamonds_col = df['Convertible Diamonds'].dropna()
+                if not diamonds_col.empty:
+                    min_diamonds = int(diamonds_col.min())
+                    max_diamonds = int(diamonds_col.max())
+                    if min_diamonds < max_diamonds:
+                        diamonds_range = st.slider(
+                            "Convertible Diamonds Range", 
+                            min_diamonds, 
+                            max_diamonds, 
+                            (min_diamonds, max_diamonds), 
+                            step=max(1000, (max_diamonds - min_diamonds) // 100),
+                            key="tab1_diamonds"
+                        )
+            except Exception as e:
+                st.error(f"Error processing diamonds data: {e}")
+
+    st.title("📊 Filtered Pay Chart")
+    
+    # Apply filters safely
+    try:
+        filtered_df = df.copy()
+        
+        if selected_ranks and 'Ranking' in df.columns:
+            filtered_df = filtered_df[filtered_df['Ranking'].isin(selected_ranks)]
+        
+        if 'Salary in Beans' in df.columns and salary_range != (0, 0):
+            filtered_df = filtered_df[
+                filtered_df['Salary in Beans'].between(salary_range[0], salary_range[1])
+            ]
+        
+        if 'Convertible Diamonds' in df.columns and diamonds_range != (0, 0):
+            filtered_df = filtered_df[
+                filtered_df['Convertible Diamonds'].between(diamonds_range[0], diamonds_range[1])
+            ]
+
+        # Display results
+        if filtered_df.empty:
+            st.warning("No matching data found. Try adjusting your filters.")
+        else:
+            st.success(f"Showing {len(filtered_df)} result(s) based on filters:")
+            
+            # Prepare display dataframe
+            columns_to_exclude = ['Effective Broadcasting Limit', 'Billable Hours Limit', 'Bean_to_USD_Rate']
+            display_df = filtered_df.drop(columns=[col for col in columns_to_exclude if col in filtered_df.columns])
+            
+            st.dataframe(display_df, use_container_width=True)
+
+            # Download button
+            excel_data = create_excel_download(display_df, 'Filtered Data')
+            if excel_data:
+                st.download_button(
+                    label="📥 Download Filtered Data as Excel",
+                    data=excel_data,
+                    file_name="filtered_agency_pay_chart.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="tab1_download"
+                )
+    except Exception as e:
+        st.error(f"Error filtering data: {e}")
+
+# === TAB 2: Beans to Diamonds Converter ===
+with tab2:
+    st.session_state.current_tab = 2
+    
+    st.title("🫘 → 💎 Beans to Diamonds Converter")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("Configuration")
+        
+        # Package options
+        all_packages = {
+            "10999 → 3045 Diamonds": (10999, 3045),
+            "3999 → 1105 Diamonds": (3999, 1105),
+            "999 → 275 Diamonds": (999, 275),
+            "109 → 29 Diamonds": (109, 29),
+            "8 → 2 Diamonds": (8, 2),
         }
-        for count, cost, win in steps
-    ])
-
-def convert_df_to_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='PK Breakdown')
-    return output.getvalue()
-
-with tab3:
-    st.title("💎 PK Diamond Optimizer")
-    diamonds = st.number_input("Enter your diamond amount", min_value=0, step=100)
-
-    if st.button("💎 Submit PK Diamond"):
-        pk_points = diamonds * 10
-        pk_type, win_total, steps, diamonds_used, remainder = reward_breakdown(pk_points)
-        df = breakdown_to_dataframe(steps)
-        excel_data = convert_df_to_excel(df)
-
-        st.subheader("🎯 Optimization Summary")
-        st.markdown(f"**🏆 PK Type:** {pk_type}")
-        st.markdown(f"**💎 Diamonds Used:** {diamonds_used}")
-        st.markdown(f"**📈 PK Score (Used):** {diamonds_used * 10}")
-        st.markdown(f"**🫘 Total Win (Beans):** {win_total}")
-        st.markdown(f"**🔸 Unused Diamonds:** {remainder // 10}")
-
-        st.subheader("📊 Reward Breakdown")
-        st.dataframe(df, use_container_width=True)
-
-        st.download_button(
-            label="📥 Download Breakdown as Excel",
-            data=excel_data,
-            file_name="PK_Reward_Breakdown.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        
+        selected_labels = st.multiselect(
+            "Choose conversion packages:",
+            options=list(all_packages.keys()),
+            default=list(all_packages.keys()),
+            key="tab2_packages"
         )
+        
+        beans_input = st.number_input(
+            "Enter Beans amount:", 
+            min_value=0, 
+            value=0, 
+            step=1,
+            key="tab2_beans",
+            help="Enter the number of beans you want to convert"
+        )
+        
+        convert_button = st.button("🔄 Convert Beans → Diamonds", key="tab2_convert")
+    
+    with col2:
+        st.subheader("Results")
+        
+        if convert_button:
+            if not selected_labels:
+                st.warning("Please select at least one conversion package.")
+            elif beans_input <= 0:
+                st.warning("Please enter a valid number of beans.")
+            else:
+                try:
+                    active_packages = [all_packages[label] for label in selected_labels]
+                    diamonds, leftover, breakdown = greedy_bean_to_diamond(beans_input, active_packages)
+                    
+                    # Display metrics
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.metric("💎 Total Diamonds", f"{diamonds:,}")
+                    with col_b:
+                        st.metric("🫘 Beans Leftover", f"{leftover:,}")
+                    
+                    # Display breakdown
+                    if breakdown:
+                        st.subheader("📊 Conversion Breakdown")
+                        breakdown_data = []
+                        for pkg, cnt in breakdown.items():
+                            try:
+                                parts = pkg.split('→')
+                                cost = int(parts[0])
+                                diamonds_gained = int(parts[1])
+                                breakdown_data.append({
+                                    "Package": pkg,
+                                    "Times Used": cnt,
+                                    "Total Cost": cost * cnt,
+                                    "Diamonds Gained": diamonds_gained * cnt
+                                })
+                            except (ValueError, IndexError):
+                                continue
+                        
+                        if breakdown_data:
+                            breakdown_df = pd.DataFrame(breakdown_data)
+                            st.dataframe(breakdown_df, use_container_width=True)
+                            
+                            # Download breakdown
+                            excel_data = create_excel_download(breakdown_df, 'Beans to Diamonds Breakdown')
+                            if excel_data:
+                                st.download_button(
+                                    label="📥 Download Breakdown as Excel",
+                                    data=excel_data,
+                                    file_name="Beans_to_Diamonds_Breakdown.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    key="tab2_download"
+                                )
+                    else:
+                        st.info("Not enough beans to use any selected packages.")
+                except Exception as e:
+                    st.error(f"Error in conversion: {e}")
 
-        st.caption("All calculations based on max win logic using your available diamonds.")
+# === TAB 3: PK Diamond Optimizer ===
+with tab3:
+    st.session_state.current_tab = 3
+    
+    st.title("💎 PK Diamond Optimizer")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("Input")
+        diamonds_input = st.number_input(
+            "Enter diamond amount:", 
+            min_value=0, 
+            step=100,
+            key="tab3_diamonds",
+            help="Enter the number of diamonds you want to optimize"
+        )
+        
+        optimize_button = st.button("⚡ Optimize PK Strategy", key="tab3_optimize")
+    
+    with col2:
+        st.subheader("Optimization Results")
+        
+        if optimize_button:
+            if diamonds_input <= 0:
+                st.warning("Please enter a valid number of diamonds.")
+            else:
+                try:
+                    pk_points = diamonds_input * 10
+                    pk_type, win_total, steps, diamonds_used, remainder = reward_breakdown(pk_points)
+                    
+                    if pk_type:
+                        # Summary
+                        st.markdown("### 🎯 Optimization Summary")
+                        summary_data = {
+                            "🏆 Best PK Type": pk_type,
+                            "💎 Diamonds Used": f"{diamonds_used:,}",
+                            "📈 PK Points Used": f"{diamonds_used * 10:,}",
+                            "🫘 Total Beans Won": f"{win_total:,}",
+                            "🔸 Unused Diamonds": f"{remainder // 10:,}"
+                        }
+                        
+                        for key, value in summary_data.items():
+                            st.markdown(f"**{key}:** {value}")
+                        
+                        # Breakdown table
+                        if steps:
+                            st.markdown("### 📊 Detailed Breakdown")
+                            breakdown_data = []
+                            for count, cost, win in steps:
+                                breakdown_data.append({
+                                    "Matches": count,
+                                    "PK Points per Match": cost,
+                                    "Total PK Points": count * cost,
+                                    "Beans per Match": win,
+                                    "Total Beans Won": count * win
+                                })
+                            
+                            breakdown_df = pd.DataFrame(breakdown_data)
+                            st.dataframe(breakdown_df, use_container_width=True)
+                            
+                            # Download breakdown
+                            excel_data = create_excel_download(breakdown_df, 'PK Optimization Breakdown')
+                            if excel_data:
+                                st.download_button(
+                                    label="📥 Download Breakdown as Excel",
+                                    data=excel_data,
+                                    file_name="PK_Optimization_Breakdown.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    key="tab3_download"
+                                )
+                    else:
+                        st.info("No optimal strategy found with the given diamonds.")
+                except Exception as e:
+                    st.error(f"Error in optimization: {e}")
 
 # === Footer ===
+st.markdown("---")
 st.markdown("""
-<hr style="margin-top: 50px;">
-<div style="text-align: center; font-size: 14px; color: #6B4E9B;">
+<div style="text-align: center; font-size: 14px; color: #6B4E9B; margin-top: 2rem;">
     <strong>Alpha Agency 752</strong> — Streamlined. Strategic. Alpha.<br>
     Contact: info@alphaagency752.com | © 2025
 </div>
