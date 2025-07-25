@@ -188,8 +188,7 @@ with tab1:
         available_columns = [col for col in required_columns if col in df.columns]
         
         if not available_columns:
-            st.error("Required columns not found in dataset")
-            st.write("Available columns:", list(df.columns))
+            
         
         # Rank filter
         selected_ranks = []
