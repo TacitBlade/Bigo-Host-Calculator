@@ -3,11 +3,15 @@ frontend:
   phases:
     # IMPORTANT - Please verify your build commands
     build:
-      commands: []
+      commands:
+        - python -m pip install --upgrade pip
+        - pip install -r requirements.txt
+        - echo "Build complete. Streamlit apps are run at runtime."
   artifacts:
     # IMPORTANT - Please verify your build output directory
     baseDirectory: /
     files:
       - '**/*'
   cache:
-    paths: []
+    paths:
+      - .pip/cache/**/*
