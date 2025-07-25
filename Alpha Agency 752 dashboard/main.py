@@ -427,44 +427,4 @@ with tab3:
                         }
                         
                         for key, value in summary_data.items():
-                            st.markdown(f"**{key}:** {value}")
-                        
-                        # Breakdown table
-                        if steps:
-                            st.markdown("### 📊 Detailed Breakdown")
-                            breakdown_data = []
-                            for count, cost, win in steps:
-                                breakdown_data.append({
-                                    "Matches": count,
-                                    "PK Points per Match": cost,
-                                    "Total PK Points": count * cost,
-                                    "Beans per Match": win,
-                                    "Total Beans Won": count * win
-                                })
-                            
-                            breakdown_df = pd.DataFrame(breakdown_data)
-                            st.dataframe(breakdown_df, use_container_width=True)
-                            
-                            # Download breakdown
-                            excel_data = create_excel_download(breakdown_df, 'PK Optimization Breakdown')
-                            if excel_data:
-                                st.download_button(
-                                    label="📥 Download Breakdown as Excel",
-                                    data=excel_data,
-                                    file_name="PK_Optimization_Breakdown.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    key="tab3_download"
-                                )
-                    else:
-                        st.info("No optimal strategy found with the given diamonds.")
-                except Exception as e:
-                    st.error(f"Error in optimization: {e}")
-
-# === Footer ===
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; font-size: 14px; color: #6B4E9B; margin-top: 2rem;">
-    <strong>Alpha Agency 752</strong> — Streamlined. Strategic. Alpha.<br>
-    Contact: info@alphaagency752.com | © 2025
-</div>
-""", unsafe_allow_html=True)
+                            st.markdown(f"**{key:
